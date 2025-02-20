@@ -1,12 +1,9 @@
 ﻿using System;
 using System.Globalization;
 using System.Management;
-using System.Runtime.InteropServices;
 using HASS.Agent.Shared.Models.HomeAssistant;
 using HASS.Agent.Shared.Models.Internal;
 using Newtonsoft.Json;
-using Serilog;
-using static System.Formats.Asn1.AsnWriter;
 
 namespace HASS.Agent.Shared.HomeAssistant.Sensors
 {
@@ -23,7 +20,7 @@ namespace HASS.Agent.Shared.HomeAssistant.Sensors
         public int? Round { get; private set; }
 
         protected readonly ObjectQuery ObjectQuery;
-        protected ManagementObjectSearcher Searcher;
+        protected readonly ManagementObjectSearcher Searcher;
 
         public WmiQuerySensor(string query, string scope = "", bool applyRounding = false, int? round = null, int? updateInterval = null, string entityName = DefaultName, string name = DefaultName, string id = default, string advancedSettings = default) : base(entityName ?? DefaultName, name ?? null, updateInterval ?? 10, id, false, advancedSettings)
         {
@@ -32,19 +29,16 @@ namespace HASS.Agent.Shared.HomeAssistant.Sensors
             ApplyRounding = applyRounding;
             Round = round;
 
+            // prepare query
             ObjectQuery = new ObjectQuery(Query);
-            Searcher = CreateSearcher();
-        }
 
-        private ManagementObjectSearcher CreateSearcher()
-        {
-            Searcher?.Dispose();
-
-            var managementScope = !string.IsNullOrWhiteSpace(Scope)
-                ? new ManagementScope(Scope)
+            // use either default or provided scope
+            var managementscope = !string.IsNullOrWhiteSpace(scope)
+                ? new ManagementScope(scope)
                 : new ManagementScope(@"\\localhost\");
 
-            return new ManagementObjectSearcher(managementScope, ObjectQuery);
+            // prepare searcher
+            Searcher = new ManagementObjectSearcher(managementscope, ObjectQuery);
         }
 
         public void Dispose() => Searcher?.Dispose();
@@ -71,46 +65,37 @@ namespace HASS.Agent.Shared.HomeAssistant.Sensors
 
         public override string GetState()
         {
-            try
+            using var collection = Searcher.Get();
+            var retValue = string.Empty;
+
+            foreach (var managementBaseObject in collection)
             {
-                using var collection = Searcher.Get();
-                var retValue = string.Empty;
-
-                foreach (var managementBaseObject in collection)
+                try
                 {
-                    try
-                    {
-                        if (!string.IsNullOrEmpty(retValue))
-                            continue;
+                    if (!string.IsNullOrEmpty(retValue))
+                        continue;
 
-                        using var managementObject = (ManagementObject)managementBaseObject;
-                        foreach (var property in managementObject.Properties)
-                        {
-                            retValue = property?.Value?.ToString() ?? string.Empty;
-                            break;
-                        }
-                    }
-                    finally
+                    using var managementObject = (ManagementObject)managementBaseObject;
+                    foreach (var property in managementObject.Properties)
                     {
-                        managementBaseObject?.Dispose();
+                        retValue = property?.Value?.ToString() ?? string.Empty;
+                        break;
                     }
                 }
-
-                // optionally apply rounding
-                if (ApplyRounding && Round != null && double.TryParse(retValue, out var dblValue))
+                finally
                 {
-                    retValue = Math.Round(dblValue, (int)Round).ToString(CultureInfo.CurrentCulture);
+                    managementBaseObject?.Dispose();
                 }
+            }
 
-                // done
-                return retValue;
-            }
-            catch (COMException)
+            // optionally apply rounding
+            if (ApplyRounding && Round != null && double.TryParse(retValue, out var dblValue))
             {
-                Log.Warning("[WMIQUERY] [{name}] Searcher is no longer valid, recreating", Name);
-                Searcher = CreateSearcher();
-                return null;
+                retValue = Math.Round(dblValue, (int)Round).ToString(CultureInfo.CurrentCulture);
             }
+
+            // done
+            return retValue;
         }
 
         public override string GetAttributes() => string.Empty;

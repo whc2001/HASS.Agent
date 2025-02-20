@@ -385,47 +385,36 @@ namespace HASS.Agent.Media
         /// <param name="mediaUri"></param>
         internal static async void ProcessMedia(string mediaUri)
         {
-            if (!Variables.AppSettings.MediaPlayerEnabled)
-            {
-                return;
-            }
+            if (!Variables.AppSettings.MediaPlayerEnabled) return;
 
             try
             {
-                if (Variables.ExtendedLogging)
-                {
-                    Log.Information("[MEDIA] Received media: {com}", mediaUri);
-                }
+                if (Variables.ExtendedLogging) Log.Information("[MEDIA] Received media: {com}", mediaUri);
 
                 // prepare the localfile var
-                var audioUri = mediaUri;
+                var localFile = mediaUri;
 
-                if (audioUri.ToLower().StartsWith("http"))
+                if (localFile.ToLower().StartsWith("http"))
                 {
                     // remote file, try to download
-                    var (downloaded, resourceUri) = await StorageManager.RetrieveAudioAsync(mediaUri);
-                    if (!downloaded && string.IsNullOrWhiteSpace(resourceUri))
+                    var (success, downloadedLocalFile) = await StorageManager.DownloadAudioAsync(mediaUri);
+                    if (!success)
                     {
                         Log.Error("[MEDIA] Unable to download media");
                         return;
                     }
 
-                    if (downloaded)
-                    {
-                        audioUri = resourceUri;
-                    }
+                    // done
+                    localFile = downloadedLocalFile;
                 }
 
                 // pause if we're playing
-                if (Variables.MediaPlayer.CurrentState == Windows.Media.Playback.MediaPlayerState.Playing)
-                {
-                    Variables.MediaPlayer.Pause();
-                }
+                if (Variables.MediaPlayer.CurrentState == Windows.Media.Playback.MediaPlayerState.Playing) Variables.MediaPlayer.Pause();
 
                 // set the uri source
-                Variables.MediaPlayer.Source = MediaSource.CreateFromUri(new Uri(audioUri));
+                Variables.MediaPlayer.Source = MediaSource.CreateFromUri(new Uri(localFile));
 
-                if (Variables.ExtendedLogging) Log.Information("[MEDIA] Playing: {file}", Path.GetFileName(audioUri));
+                if (Variables.ExtendedLogging) Log.Information("[MEDIA] Playing: {file}", Path.GetFileName(localFile));
 
                 // play it
                 Variables.MediaPlayer.Play();

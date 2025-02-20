@@ -70,16 +70,15 @@ namespace HASS.Agent.Shared.HomeAssistant.Commands.InternalCommands
 
             try
             {
-                var parsed = float.TryParse(action, out var volumeFloat);
+                var parsed = int.TryParse(action, out var volumeInt);
                 if (!parsed)
                 {
                     Log.Error("[SETVOLUME] [{name}] Unable to trigger command, the provided action value can't be parsed: {val}", EntityName, action);
 
                     return;
                 }
-                
-                var volumeInt = (int)Math.Ceiling(volumeFloat);
-                AudioManager.SetDefaultDeviceProperties(DeviceType.Output, DeviceRole.Multimedia | DeviceRole.Console, volumeInt, null);
+
+                AudioManager.SetDefaultDeviceProperties(DeviceType.Output, DeviceRole.Multimedia | DeviceRole.Console, _volume, null);
             }
             catch (Exception ex)
             {
